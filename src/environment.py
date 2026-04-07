@@ -3,23 +3,36 @@ from gymnasium import spaces
 import numpy as np
 
 class GridWorldEnv(gym.Env):
-    def __init__(self, size=5):
+    def __init__(self, size=5, reward_probability=0.3, seed=None):
         super().__init__()
         self.size = size
+        self.reward_probability = reward_probability
+        self.nb_steps = 0
+        self.max_steps = size * size * 8  # Arbitrary large number to prevent infinite episodes
 
         # Actions
         self.action_space = spaces.Discrete(4)
 
-        # Observation space
-        self.observation_space = spaces.Box(low=0, high=size - 1, shape=(2,), dtype=int)
+        # Observation space is the relative position to the goal (dx, dy)
+        self.observation_space = spaces.Box(
+            low=-(size - 1), 
+            high= (size - 1), 
+            shape=(2,), 
+            dtype=np.int32
+            )
 
         # Initialize agent and goal positions
         self.goal = None
         self.agent_pos = None
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
         
+        # Initialize seed for reproducibility
+        self.seed = seed
+        np.random.seed(seed)
+
+    def reset(self):
+        super().reset(seed=self.seed)
+        self.nb_steps = 0
+
         # Randomly initialize agent and goal positions
         self.agent_pos = np.random.randint(0, self.size, size=2)
         self.goal = np.random.randint(0, self.size, size=2)
@@ -36,6 +49,7 @@ class GridWorldEnv(gym.Env):
         return obs, {}
 
     def step(self, action):
+        distance_to_goal = np.linalg.norm(self.agent_pos - self.goal)
         x, y = self.agent_pos
 
         if action == 0:  # Up
@@ -49,19 +63,35 @@ class GridWorldEnv(gym.Env):
 
         # New agent position
         self.agent_pos = np.array([x, y])
+        new_distance_to_goal = np.linalg.norm(self.agent_pos - self.goal)
+
 
         terminated = np.array_equal(self.agent_pos, self.goal)
         truncated = False
 
-        # Only reward when the goal is reached -> sparse reward
-        reward = 1 if terminated else 0
+        # Determine reward
+        if new_distance_to_goal < distance_to_goal:
+            reward = 0.1  # Positive reward for moving closer
+        elif new_distance_to_goal > distance_to_goal:
+            reward = -0.1  # Negative reward for moving away
+        elif terminated:
+            reward = 100  # Large reward for reaching the goal
+        else:            
+            reward = 0 
+
+        if np.random.rand() >= self.reward_probability:
+            reward = 0 # No reward with certain probability to increase sparsity
         
         # Observation is the relative position to the goal
         agent_x, agent_y = self.agent_pos
         goal_x, goal_y = self.goal
         obs = [goal_x - agent_x, goal_y - agent_y]
 
+        self.nb_steps += 1
+
         return obs, reward, terminated, truncated, {}
+
+# --- Helper functions ---
 
     def render(self):
         grid = np.full((self.size, self.size), ".")
