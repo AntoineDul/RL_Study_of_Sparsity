@@ -65,21 +65,25 @@ class GridWorldEnv(gym.Env):
         self.agent_pos = np.array([x, y])
         new_distance_to_goal = np.linalg.norm(self.agent_pos - self.goal)
 
+        # Check if max steps exceeded
+        if self.nb_steps >= self.max_steps:
+            truncated = True
+        else:
+            truncated = False
 
         terminated = np.array_equal(self.agent_pos, self.goal)
-        truncated = False
-
+    
         # Determine reward
-        if new_distance_to_goal < distance_to_goal:
+        if terminated:
+            reward = 100  # Large reward for reaching the goal
+        elif new_distance_to_goal < distance_to_goal:
             reward = 0.1  # Positive reward for moving closer
         elif new_distance_to_goal > distance_to_goal:
             reward = -0.1  # Negative reward for moving away
-        elif terminated:
-            reward = 100  # Large reward for reaching the goal
         else:            
             reward = 0 
 
-        if np.random.rand() >= self.reward_probability:
+        if np.random.rand() >= self.reward_probability and not terminated:
             reward = 0 # No reward with certain probability to increase sparsity
         
         # Observation is the relative position to the goal

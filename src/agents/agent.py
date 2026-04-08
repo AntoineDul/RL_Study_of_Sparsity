@@ -19,6 +19,7 @@ class Agent(ABC):
         seed=None
     ):
         self.env = env
+        self.n = env.size
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
@@ -57,10 +58,21 @@ class Agent(ABC):
         """
         pass
 
-    def epsilon_greedy(self, q_values):
+
+    def epsilon_greedy(self, q_values, state):
         """
         Shared helper for epsilon-greedy action selection.
         """
+
+        # Parse the state (observations) and convert to indices for Q-table
+        ix, iy = self.state_to_index(state)
+
         if np.random.rand() < self.epsilon:
-            return self.env.action_space.sample()
-        return int(np.argmax(q_values))
+            return self.env.action_space.sample() # Explore
+        else:
+            return int(np.argmax(q_values[ix, iy])) # Exploit
+    
+    def state_to_index(self, state):
+        dx, dy = state
+        offset = self.n - 1
+        return dx + offset, dy + offset
