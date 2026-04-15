@@ -14,11 +14,11 @@ def main():
     # Initialize and train agent
     #agent = agents.Sarsa(env, alpha=0.1, gamma=0.99, epsilon=0.5, num_episodes=1500, seed=seed)
     agent = agents.NStepSARSA(env, alpha=0.1, gamma=0.99, epsilon=0.5, num_episodes=1500, n_step=1, seed=seed)
-    step_tracker, success_tracker = agent.train()
+    results = agent.train()
 
     # Plot results (steps to goal over episodes)
     # plot_step_tracker(step_tracker)
-    plot_single_run(success_tracker, None, window=50, save_path="plot_single_run.png")
+    plot_single_run(results["successes"], None, window=50, save_path="plot_single_run.png")
 
 def test_env():
     env = GridWorldEnv(size=5)

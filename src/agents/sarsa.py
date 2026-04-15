@@ -14,6 +14,8 @@ class Sarsa(Agent):
 
         step_tracker = []
         success_tracker = []
+        returns = []
+        first_success_episodes = []
 
         for episode in range(self.num_episodes):
             # Reset the environment and get the initial state, (x,y) is the state
@@ -22,8 +24,10 @@ class Sarsa(Agent):
 
             action = self.select_action((x, y))
             done = False
+            first_success_episode = None
             nb_steps = 0
             success = 0
+            total_reward = 0.0
 
             while not done and nb_steps < self.env.max_steps:
                 (x_new, y_new), reward, terminated, truncated, _ = self.env.step(action)
@@ -34,7 +38,10 @@ class Sarsa(Agent):
 
                 if done:
                     target = reward
-                    success = 1
+                    if terminated:
+                        success = 1
+                        if first_success_episode is None:
+                            first_success_episode = episode
                 else:
                     target = reward + self.gamma * self.Q[ix_new, iy_new, next_action]
 
@@ -42,33 +49,31 @@ class Sarsa(Agent):
 
                 (x, y) = (x_new, y_new)
                 action = next_action
+                total_reward += reward
                 nb_steps += 1
 
+            # Track performance metrics
             step_tracker.append(nb_steps)
             success_tracker.append(success)
-            self.epsilon = max(0.01, self.epsilon * 0.995)  # Decay epsilon
+            returns.append(total_reward)
+            first_success_episodes.append(first_success_episode)
+
+            # Decay epsilon
+            self.epsilon = max(0.01, self.epsilon * 0.995) 
 
             if episode % 50 == 0:
                 print(f"Episode {episode}, Steps: {nb_steps}, Epsilon: {self.epsilon:.4f}")
 
+        history = {
+            "returns": returns,
+            "successes": success_tracker,
+            "episode_lengths": step_tracker,
+            "first_success_episode": first_success_episode
+        }
+
         return step_tracker, success_tracker
 
 # --- Helper functions ---
-
-    # def state_to_index(self, state):
-    #     dx, dy = state
-    #     offset = self.n - 1
-    #     return dx + offset, dy + offset
-
-    # def epsilon_greedy(self, state):
-    #     # Parse the state (observations)
-    #     ix, iy = self.state_to_index(state)
-        
-    #     # Choose action using epsilon-greedy policy
-    #     if np.random.rand() < self.epsilon:
-    #         return self.env.action_space.sample()  # Explore
-    #     else:
-    #         return np.argmax(self.Q[ix, iy])  # Exploit
 
     def select_action(self, state):
         return super().epsilon_greedy(self.Q, state)

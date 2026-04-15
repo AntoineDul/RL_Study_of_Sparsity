@@ -10,11 +10,14 @@ class NStepSARSA(Agent):
     def train(self):
         step_tracker = []
         success_tracker = []
+        returns = []
+        first_success_episodes = []
 
         for episode in range(self.num_episodes):
             (x, y), _ = self.env.reset()
             ix, iy = super().state_to_index((x, y))
             action = self.select_action((x, y))
+            
 
             # Buffers
             states = [(x, y)]
@@ -25,6 +28,8 @@ class NStepSARSA(Agent):
             t = 0
             nb_steps = 0
             success = 0
+            total_reward = 0.0
+            first_success_episode = None
 
             while True:
 
@@ -35,11 +40,14 @@ class NStepSARSA(Agent):
 
                     states.append((x_new, y_new))
                     rewards.append(reward)
+                    total_reward += reward
 
                     if done:
                         T = t + 1
                         if terminated:
                             success = 1
+                            if first_success_episode is None:
+                                first_success_episode = episode
                     else:
                         next_action = self.select_action((x_new, y_new))
                         actions.append(next_action)
@@ -69,13 +77,26 @@ class NStepSARSA(Agent):
                 t += 1
                 nb_steps += 1
 
+            # Track performance metrics
             step_tracker.append(nb_steps)
             success_tracker.append(success)
+            returns.append(total_reward)
+            first_success_episodes.append(first_success_episode)
             self.epsilon = max(0.01, self.epsilon * 0.995)  # Decay epsilon
-            if episode % 1 == 0:
+
+            # Print progress every n episodes
+            n = 1
+            if episode % n == 0:
                 print(f"Episode {episode}, Steps: {nb_steps}, Epsilon: {self.epsilon:.4f}")
 
-        return step_tracker, success_tracker
+        history = {
+            "returns": returns,
+            "successes": success_tracker,
+            "episode_lengths": step_tracker,
+            "first_success_episode": first_success_episode
+        }
+
+        return history
 
     def select_action(self, state):
         return super().epsilon_greedy(self.Q, state)
