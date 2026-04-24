@@ -71,7 +71,8 @@ class Sarsa(Agent):
             "first_success_episode": first_success_episode
         }
 
-        return step_tracker, success_tracker
+        return history
+        # return step_tracker, success_tracker
 
 # --- Helper functions ---
 
