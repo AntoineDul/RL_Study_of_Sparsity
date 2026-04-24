@@ -1,11 +1,9 @@
-from collections import defaultdict
 import numpy as np
 
 from .agent import Agent
 
 
 class QLambda(Agent):
-
     def __init__(
         self,
         env,
@@ -20,20 +18,22 @@ class QLambda(Agent):
 
         self.lam = lam
         self.n_actions = self.env.action_space.n
-        self.q_table = defaultdict(lambda: np.zeros(self.n_actions, dtype=np.float64))
+
+        # Same dense tabular layout as SARSA-family
+        self.Q = np.zeros((2 * self.n - 1, 2 * self.n - 1, self.n_actions))
 
     def select_action(self, state):
- 
-        state = tuple(state)
-
-        if np.random.rand() < self.epsilon:
-            return self.env.action_space.sample()
-        return int(np.argmax(self.q_table[state]))
+        return super().epsilon_greedy(self.Q, state)
 
     def _is_greedy_action(self, state, action):
-        state = tuple(state)
-        greedy_action = int(np.argmax(self.q_table[state]))
-        return action == greedy_action
+        """Return True if action is one of the greedy actions.
+
+        With Q initialized to all zeros, several actions can tie for max.
+        Treating only np.argmax(...) as greedy clears traces incorrectly.
+        """
+        ix, iy = super().state_to_index(state)
+        q_values = self.Q[ix, iy]
+        return np.isclose(q_values[action], np.max(q_values))
 
     def train(self):
         returns = []
@@ -47,16 +47,20 @@ class QLambda(Agent):
             state, _ = self.env.reset()
             state = tuple(state)
 
-            # eligibility traces: state -> action trace vector
-            traces = defaultdict(lambda: np.zeros(self.n_actions, dtype=np.float64))
+            # Dense eligibility trace table. Reset every episode.
+            E = np.zeros_like(self.Q)
+
+            # Select once, then carry this action forward. Do not sample a
+            # throwaway next_action just to decide whether to clear traces.
+            action = self.select_action(state)
 
             done = False
             total_reward = 0.0
             steps = 0
             success = 0
 
-            while not done and steps < 500:
-                action = self.select_action(state)
+            while not done and steps < self.env.max_steps:
+                ix, iy = super().state_to_index(state)
 
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 next_state = tuple(next_state)
@@ -64,46 +68,42 @@ class QLambda(Agent):
 
                 if terminated:
                     success = 1
-
-                # TD error
-                q_sa = self.q_table[state][action]
+                    if first_success_episode is None:
+                        first_success_episode = episode
 
                 if done:
                     td_target = reward
+                    next_action = None
                 else:
-                    td_target = reward + self.gamma * np.max(self.q_table[next_state])
-
-                delta = td_target - q_sa
-
-                # accumulating trace
-                traces[state][action] += 1.0
-
-                # update all traced state-action pairs
-                for traced_state in list(traces.keys()):
-                    self.q_table[traced_state] += self.alpha * delta * traces[traced_state]
-
-                if done:
-                    traces.clear()
-                else:
-                    # if next action is greedy, decay traces
+                    ix_next, iy_next = super().state_to_index(next_state)
+                    td_target = reward + self.gamma * np.max(self.Q[ix_next, iy_next])
                     next_action = self.select_action(next_state)
 
-                    if self._is_greedy_action(next_state, next_action):
-                        for traced_state in list(traces.keys()):
-                            traces[traced_state] *= self.gamma * self.lam
-                    else:
-                        traces.clear()
+                delta = td_target - self.Q[ix, iy, action]
+
+                # Replacing traces are usually more stable than accumulating
+                # traces here and avoid repeated large trace values.
+                E[ix, iy, action] = 1.0
+
+                self.Q += self.alpha * delta * E
+
+                if done:
+                    E.fill(0.0)
+                elif self._is_greedy_action(next_state, next_action):
+                    E *= self.gamma * self.lam
+                else:
+                    # Watkins Q(lambda): clear traces after the actual selected
+                    # next action is exploratory/non-greedy.
+                    E.fill(0.0)
 
                 state = next_state
+                action = next_action
                 total_reward += reward
                 steps += 1
 
             returns.append(total_reward)
             successes.append(success)
             episode_lengths.append(steps)
-
-            if success and first_success_episode is None:
-                first_success_episode = episode
 
         history = {
             "returns": returns,
@@ -115,4 +115,4 @@ class QLambda(Agent):
         return history
 
     def get_q_table(self):
-        return self.q_table
+        return self.Q
