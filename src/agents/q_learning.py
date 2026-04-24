@@ -1,4 +1,3 @@
-from collections import defaultdict
 import numpy as np
 
 from .agent import Agent
@@ -17,11 +16,13 @@ class QLearning(Agent):
         super().__init__(env, alpha, gamma, epsilon, num_episodes, seed)
 
         self.n_actions = self.env.action_space.n
-        self.q_table = defaultdict(lambda: np.zeros(self.n_actions))
+
+        # Same dense tabular format as SARSA:
+        # Q[dx_index, dy_index, action]
+        self.Q = np.zeros((2 * self.n - 1, 2 * self.n - 1, self.n_actions))
 
     def select_action(self, state):
-        state = tuple(state)
-        return self.epsilon_greedy(self.q_table[state])
+        return super().epsilon_greedy(self.Q, state)
 
     def train(self):
         returns = []
@@ -30,7 +31,8 @@ class QLearning(Agent):
         first_success_episode = None
 
         for episode in range(self.num_episodes):
-            print(f"Episode {episode+1}/{self.num_episodes}", end="\r")
+            print(f"Episode {episode + 1}/{self.num_episodes}", end="\r")
+
             state, _ = self.env.reset()
             state = tuple(state)
 
@@ -39,7 +41,8 @@ class QLearning(Agent):
             steps = 0
             success = 0
 
-            while not done and steps < 500:  # Prevent infinite episodes
+            while not done and steps < self.env.max_steps:
+                ix, iy = super().state_to_index(state)
                 action = self.select_action(state)
 
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
@@ -50,10 +53,11 @@ class QLearning(Agent):
                 if done:
                     td_target = reward
                 else:
-                    td_target = reward + self.gamma * np.max(self.q_table[next_state])
+                    ix_next, iy_next = super().state_to_index(next_state)
+                    td_target = reward + self.gamma * np.max(self.Q[ix_next, iy_next])
 
-                td_error = td_target - self.q_table[state][action]
-                self.q_table[state][action] += self.alpha * td_error
+                td_error = td_target - self.Q[ix, iy, action]
+                self.Q[ix, iy, action] += self.alpha * td_error
 
                 state = next_state
                 total_reward += reward
@@ -61,13 +65,12 @@ class QLearning(Agent):
 
                 if terminated:
                     success = 1
+                    if first_success_episode is None:
+                        first_success_episode = episode
 
             returns.append(total_reward)
             successes.append(success)
             episode_lengths.append(steps)
-
-            if success and first_success_episode is None:
-                first_success_episode = episode
 
         history = {
             "returns": returns,
@@ -79,4 +82,4 @@ class QLearning(Agent):
         return history
 
     def get_q_table(self):
-        return self.q_table
+        return self.Q
