@@ -1,4 +1,3 @@
-from collections import defaultdict
 import numpy as np
 
 from .q_learning import QLearning
@@ -12,16 +11,19 @@ class QLearningBonus(QLearning):
         gamma=0.99,
         epsilon=0.05,
         num_episodes=3000,
-        beta=1.0,
+        beta=0.05,
         seed=None
     ):
         super().__init__(env, alpha, gamma, epsilon, num_episodes, seed)
 
         self.beta = beta
-        self.visit_counts = defaultdict(lambda: np.zeros(self.n_actions, dtype=np.int32))
 
-    def _exploration_bonus(self, state, action):
-        count = self.visit_counts[state][action]
+        # Same dense tabular layout as QLearning / SARSA:
+        # [dx_index, dy_index, action]
+        self.visit_counts = np.zeros_like(self.Q, dtype=np.int32)
+
+    def _exploration_bonus(self, ix, iy, action):
+        count = self.visit_counts[ix, iy, action]
         return self.beta / np.sqrt(count)
 
     def train(self):
@@ -31,6 +33,8 @@ class QLearningBonus(QLearning):
         first_success_episode = None
 
         for episode in range(self.num_episodes):
+            print(f"Episode {episode + 1}/{self.num_episodes}", end="\r")
+
             state, _ = self.env.reset()
             state = tuple(state)
 
@@ -39,27 +43,28 @@ class QLearningBonus(QLearning):
             steps = 0
             success = 0
 
-            while not done and steps < 500:  # Prevent infinite episodes
+            while not done and steps < self.env.max_steps:
+                ix, iy = super().state_to_index(state)
                 action = self.select_action(state)
 
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 next_state = tuple(next_state)
                 done = terminated or truncated
 
-                # update count first
-                self.visit_counts[state][action] += 1
-
-                bonus = self._exploration_bonus(state, action)
+                # update count
+                self.visit_counts[ix, iy, action] += 1
+                bonus = self._exploration_bonus(ix, iy, action)
                 shaped_reward = reward + bonus
 
-                # SAME Q-learning update (just using shaped reward)
+                # Q-learning target with shaped reward
                 if done:
                     td_target = shaped_reward
                 else:
-                    td_target = shaped_reward + self.gamma * np.max(self.q_table[next_state])
+                    ix_next, iy_next = super().state_to_index(next_state)
+                    td_target = shaped_reward + self.gamma * np.max(self.Q[ix_next, iy_next])
 
-                td_error = td_target - self.q_table[state][action]
-                self.q_table[state][action] += self.alpha * td_error
+                td_error = td_target - self.Q[ix, iy, action]
+                self.Q[ix, iy, action] += self.alpha * td_error
 
                 state = next_state
                 total_reward += reward
@@ -67,17 +72,18 @@ class QLearningBonus(QLearning):
 
                 if terminated:
                     success = 1
+                    if first_success_episode is None:
+                        first_success_episode = episode
 
             returns.append(total_reward)
             successes.append(success)
             episode_lengths.append(steps)
 
-            if success and first_success_episode is None:
-                first_success_episode = episode
-
-        return {
+        history = {
             "returns": returns,
             "successes": successes,
             "episode_lengths": episode_lengths,
             "first_success_episode": first_success_episode
         }
+
+        return history
