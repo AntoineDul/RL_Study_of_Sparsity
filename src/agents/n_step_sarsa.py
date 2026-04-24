@@ -85,9 +85,9 @@ class NStepSARSA(Agent):
             self.epsilon = max(0.01, self.epsilon * 0.995)  # Decay epsilon
 
             # Print progress every n episodes
-            n = 1
-            if episode % n == 0:
-                print(f"Episode {episode}, Steps: {nb_steps}, Epsilon: {self.epsilon:.4f}")
+            # n = 1
+            # if episode % n == 0:
+            #     print(f"Episode {episode}, Steps: {nb_steps}, Epsilon: {self.epsilon:.4f}")
 
         history = {
             "returns": returns,
